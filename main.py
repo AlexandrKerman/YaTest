@@ -1,5 +1,6 @@
 import asyncio
 import re
+import sys
 from os import getenv
 
 import yandex_music as ym
@@ -10,12 +11,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 TG_API = getenv('TG_API')
-PROXY_URL = 'socks5://127.0.0.1:9150'
+
 dp = Dispatcher()
 
 
 @dp.message(Command('start'))
-async def start(message: types.Message):
+async def start(message: types.Message) -> None:
+    '''
+    start message if user wrote /start
+    :param message: message from Telegram
+    :return: None
+    '''
     start_message = ('Приветствую! Отправь мне ссылку на трек и получи информацию о нём:\n'
                      '1. Название\n'
                      '2. Исполнитель\n'
@@ -24,6 +30,11 @@ async def start(message: types.Message):
 
 
 def parse_message_for_track(url: str) -> int | None:
+    '''
+    Parsing message text for track id
+    :param url: track url
+    :return: int(track_id)
+    '''
     pattern = re.compile(r'/track/(\d+)')
     match = pattern.search(url)
     if not match:
@@ -33,6 +44,12 @@ def parse_message_for_track(url: str) -> int | None:
 
 
 async def get_track_info(client, /, track_id) -> dict | None:
+    '''
+    Finding track info by id
+    :param client: yandex_music-client
+    :param track_id: track_id
+    :return: dict(track_info)
+    '''
     track = await client.tracks([track_id])
     if track:
         track = track[0]
@@ -47,6 +64,11 @@ async def get_track_info(client, /, track_id) -> dict | None:
 
 
 def get_duration_in_minutes(seconds: int) -> str:
+    '''
+    Convert seconds to mm:ss format
+    :param seconds: seconds to convert
+    :return: str(minutes:seconds)
+    '''
     minutes = seconds // 60
     seconds = seconds % 60
     return f'{minutes:02d}:{seconds:02d}'
@@ -54,6 +76,11 @@ def get_duration_in_minutes(seconds: int) -> str:
 
 @dp.message(F.text.contains('/track'))
 async def track_id_handle(message: types.Message) -> None:
+    '''
+    Track url handler
+    :param message: message from Telegram
+    :return: None
+    '''
     client = ym.ClientAsync()
     await client.init()
     track_id = parse_message_for_track(message.text)
@@ -73,9 +100,21 @@ async def track_id_handle(message: types.Message) -> None:
 
 
 async def main():
-    session = AiohttpSession(proxy=PROXY_URL)
-    bot = Bot(token=TG_API, session=session)
-    await dp.start_polling(bot)
+    print('Bot started')
+    bot = None
+    for arg in sys.argv:
+        if arg.startswith('--proxy='):
+            proxy = arg.split('=')[1]
+            session = AiohttpSession(proxy=proxy)
+            bot = Bot(token=TG_API, session=session)
+    if not bot:
+        bot = Bot(token=TG_API)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+        print('Bot stopped')
+        return
 
 
 if __name__ == '__main__':
